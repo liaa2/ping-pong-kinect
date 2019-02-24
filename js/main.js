@@ -2,6 +2,15 @@
 
 var app = app || {};
 
+app.kinect = {
+  prevX: 0,
+  prevY: 0,
+  prevZ: 0,
+  vX: 0,
+  vY: 0,
+  vZ: 0
+};
+
 app.planeWidth = 200;
 app.planeLength = 300;
 app.paddleWidth = 12 * app.planeWidth/100;
@@ -19,8 +28,15 @@ app.guiControls = {
   currentState: '',
   lastHitBy: '',
   winner: '',
-  winStyle: ''
+  winStyle: '',
+  xPos: '',
+  yPos: '',
+  zPos: '',
+  xVel: 0.0,
+  yVel: 0.0,
+  zVel: 0.0,
 }
+
 
 // out-of-bounds value for table
 app.tableMargin = 0.2;
@@ -29,7 +45,7 @@ app.lengthBoundary = app.planeLength/2 + (app.planeLength * app.tableMargin);
 app.netTouchThreshold = 2.5;
 app.tableTouchThreshold = 2;
 
-console.log('boundaries', app.tableMargin, app.widthBoundary, app.lengthBoundary);
+// console.log('boundaries', app.tableMargin, app.widthBoundary, app.lengthBoundary);
 
 app.humanScore = 0;
 app.aiScore = 0;
@@ -77,13 +93,19 @@ app.init = () => {
   app.gui.add(app.guiControls, "lastHitBy").listen();
   app.gui.add(app.guiControls, "winner").listen();
   app.gui.add(app.guiControls, "winStyle").listen();
+  app.gui.add(app.guiControls, "xPos").listen();
+  app.gui.add(app.guiControls, "yPos").listen();
+  app.gui.add(app.guiControls, "zPos").listen();
+  app.gui.add(app.guiControls, "xVel", -0.05, 0.05).step(0.01).listen();
+  app.gui.add(app.guiControls, "yVel", -0.05, 0.05).step(0.01).listen();
+  app.gui.add(app.guiControls, "zVel", -0.05, 0.05).step(0.01).listen();
 
   //set up 3D
   app.scene = new THREE.Scene()
 
   app.camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 )
-  // app.camera.position.set( 0, 80, 280 );
-  app.camera.position.set(-213.5, 13.6, -2.6);
+  app.camera.position.set( 0, 80, 200 );
+  // app.camera.position.set(-213.5, 13.6, -2.6);
 
   app.renderer = new THREE.WebGLRenderer({ antialias: true})
   app.renderer.shadowMap.enabled = true;
@@ -188,46 +210,7 @@ app.init = () => {
     app.animate();
   }
 
-
-  //======================= version 1: mouse pad mode ================================
-
-  // document.addEventListener("mousemove", e => {
-  //   // console.log("e.page: ", e.pageX, e.pageY, e);
-  //
-  //   if( e.shiftKey ){
-  //     const yAngle = THREE.Math.mapLinear(
-  //       e.pageX,
-  //       0, window.innerWidth,
-  //       Math.PI/4, -Math.PI/4
-  //     );
-  //     app.paddle.rotation.y = yAngle;
-  //
-  //     const xAngle = THREE.Math.mapLinear(
-  //       e.pageY,
-  //       0, window.innerHeight,
-  //       Math.PI/4, -Math.PI/4
-  //     );
-  //     app.paddle.rotation.x = xAngle;
-  //     return; // don't change the position with the code below
-  //   }
-  //
-  //
-  //   app.paddle.position.x = THREE.Math.mapLinear(
-  //     e.pageX,
-  //     0, window.innerWidth,
-  //     -100, 100
-  //   );
-  //   app.paddle.position.y = THREE.Math.mapLinear(
-  //     e.pageY,
-  //     0, window.innerHeight,
-  //     60, 10
-  //   );
-  //
-  //   // app.paddle.position.y = THREE.Math.mapLinear(e.pagey, 90, 1000, )
-  // });
-
-
-  //=================== version 2: Leap Motion Controller Mode ===========================
+  //=================== Kinect ===========================
 
   //initiate animationFrame & gestures
   app.options = {
@@ -246,7 +229,7 @@ oscPort.open();
 
 // respond to incoming message events
 oscPort.on("message", function (oscMsg) {
-    console.log(oscMsg);
+    // console.log(oscMsg);
 
     if(oscMsg.address === '/joint') {
 
@@ -256,12 +239,44 @@ oscPort.on("message", function (oscMsg) {
       // right hand
       if(joint === 'l_hand'){
 
-        console.log('HAND!', {joint, userID, x, y, z});
+        app.kinect.vx = x - app.kinect.prevX;
+        app.kinect.vy = y - app.kinect.prevY;
+        app.kinect.vz = z - app.kinect.prevZ;
+
+        app.kinect.prevX = x;
+        app.kinect.prevY = y;
+        app.kinect.prevZ = z;
+
+        // console.log('HAND!', {joint, userID, x, y, z});
+        app.guiControls.xVel = app.kinect.vx.toFixed(2);
+        app.guiControls.yVel = app.kinect.vy.toFixed(2);
+        app.guiControls.zVel = app.kinect.vz.toFixed(2);
+
+        const rangeShrink = 0.3;
+        const paddleX = THREE.Math.mapLinear(
+          x,
+          0.5 - rangeShrink, 0.5 + rangeShrink,
+          -app.planeWidth/2, app.planeWidth/2
+        );
+
+        const paddleY = THREE.Math.mapLinear(
+          y,
+          0, 1,
+          100, -50
+        );
+
+        const paddleZ = THREE.Math.mapLinear(
+          z,
+          1.2, 0,
+          (app.planeLength/2 + 10) - (app.planeLength/6),
+          (app.planeLength/2 + 10) + (app.planeLength/6)
+        );
+
 
         app.paddle.position.set(
-          (x * 200) - 100,
-          y * 100,
-          z * 50
+          paddleX,
+          paddleY, // y * 100,
+          paddleZ //z * 50
         );
 
         //
@@ -273,12 +288,28 @@ oscPort.on("message", function (oscMsg) {
 
       }
 
+    } else if( oscMsg.address === '/new_user'){
+      setOSCStatusMessage('Calibration started!<br>Make surrender pose!');
+    } else if( oscMsg.address === '/new_skel'){
+      setOSCStatusMessage('Calibration finished! Ready!', 2000);
     } else if( oscMsg.address === '/lost_user'){
-      console.log('Lost user!', oscMsg);
+      setOSCStatusMessage('Lost user!');
       // handleLostUser(oscMsg);
     }
 
 });
+
+const setOSCStatusMessage = function(message, timeout=0){
+  const oscMessageDiv = document.getElementById('oscMessages');
+  console.warn(message);
+  oscMessageDiv.innerHTML = message;
+  if(timeout > 0){
+    window.setTimeout(function(){
+      oscMessageDiv.innerHTML = '';
+    }, timeout)
+  }
+};
+
 
   // The loop() function sets up the Leap controller and WebSocket connection and invokes the specified callback function on a regular update intervall. Don't need to create my own controller when using this method.
 if(false){
@@ -341,8 +372,8 @@ if(false){
 
   // Begin using a registered plugin. The plugin is run for animationFrames only.
   // list of plugins: https://developer-archive.leapmotion.com/javascript#plugins
-  app.controller.use('transform', { scale: app.planeWidth/1000 })
-  .use("riggedHand");
+
+  // app.controller.use('transform', { scale: app.planeWidth/1000 }).use("riggedHand");
 
   // use pre-recorded Leap motion frames for debugging if '?rec' appears in querystring
   if( window.location.search.includes('rec') ){
@@ -356,7 +387,7 @@ if(false){
   }
 
   // Connects this Controller object to the Leap Motion WebSocket server. If the connection succeeds, the controller can begin supplying tracking data
-  app.controller.connect();
+  // app.controller.connect();
 };
 
 window.onload = app.init;
